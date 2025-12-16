@@ -1,0 +1,250 @@
+// DOCUMENTO 14 - MODELO DATOS
+// DOCUMENTO 03 - ACTORES Y ROLES
+// BLOQUE 1: Entidades core SIN flujos de dinero, SIN KYC
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USUARIOS, ROLES Y PERMISOS
+// Referencia: DOCUMENTO 03 ACTORES ROLES
+// ============================================
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  nombre          String
+  apellidos       String?
+  telefono        String?
+  fechaNacimiento DateTime?
+  avatarUrl       String?
+  isActive        Boolean   @default(true)
+  emailVerified   Boolean   @default(false)
+  
+  // Relacion con rol
+  roleId          String
+  role            Role      @relation(fields: [roleId], references: [id])
+  
+  // Relaciones de participacion (SIN dinero)
+  participaciones Participacion[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("users")
+}
+
+model Role {
+  id          String       @id @default(uuid())
+  nombre      String       @unique
+  descripcion String?
+  isDefault   Boolean      @default(false)
+  
+  // Relaciones
+  users       User[]
+  permisos    RolePermission[]
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  codigo      String           @unique
+  nombre      String
+  descripcion String?
+  modulo      String
+  
+  // Relaciones
+  roles       RolePermission[]
+  
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  permissionId String
+  
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  createdAt    DateTime   @default(now())
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================
+// CAUSAS (ONGs)
+// Referencia: DOCUMENTO 06 MODULOS CLAVE
+// SIN liberacion de dinero
+// ============================================
+
+enum EstadoCausa {
+  PENDIENTE
+  ACTIVA
+  PAUSADA
+  COMPLETADA
+  CANCELADA
+}
+
+model Causa {
+  id              String       @id @default(uuid())
+  nombre          String
+  descripcion     String
+  imagenUrl       String?
+  sitioWeb        String?
+  
+  // Estado
+  estado          EstadoCausa  @default(PENDIENTE)
+  verificada      Boolean      @default(false)
+  
+  // Relaciones
+  sorteos         Sorteo[]
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@map("causas")
+}
+
+// ============================================
+// SORTEOS
+// Referencia: DOCUMENTO 32 REGLAS PRODUCTO SORTEOS
+// Estructura base SIN flujos de dinero
+// ============================================
+
+enum EstadoSorteo {
+  BORRADOR
+  PROGRAMADO
+  ACTIVO
+  CERRADO
+  SORTEANDO
+  FINALIZADO
+  CANCELADO
+}
+
+enum TipoSorteo {
+  ESTANDAR
+  EXPRESS
+  BENEFICO
+}
+
+model Sorteo {
+  id                  String        @id @default(uuid())
+  codigo              String        @unique
+  titulo              String
+  descripcion         String
+  imagenUrl           String?
+  
+  // Configuracion
+  tipo                TipoSorteo    @default(ESTANDAR)
+  estado              EstadoSorteo  @default(BORRADOR)
+  
+  // Fechas
+  fechaInicio         DateTime
+  fechaFin            DateTime
+  fechaSorteo         DateTime?
+  
+  // Boletos (estructura, sin precio real)
+  totalBoletos        Int
+  boletosVendidos     Int           @default(0)
+  minimoParticipantes Int           @default(1)
+  
+  // Causa asociada
+  causaId             String?
+  causa               Causa?        @relation(fields: [causaId], references: [id])
+  porcentajeCausa     Int           @default(10)
+  
+  // Relaciones
+  premios             Premio[]
+  participaciones     Participacion[]
+  
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@map("sorteos")
+}
+
+// ============================================
+// PREMIOS
+// Referencia: DOCUMENTO 32 REGLAS PRODUCTO SORTEOS
+// Estructura y tipos SIN liberacion de dinero
+// ============================================
+
+enum TipoPremio {
+  PRINCIPAL
+  SECUNDARIO
+  CONSOLACION
+}
+
+enum EstadoPremio {
+  PENDIENTE
+  ASIGNADO
+  ENTREGADO
+  NO_RECLAMADO
+}
+
+model Premio {
+  id              String        @id @default(uuid())
+  sorteoId        String
+  sorteo          Sorteo        @relation(fields: [sorteoId], references: [id], onDelete: Cascade)
+  
+  // Informacion del premio
+  tipo            TipoPremio    @default(PRINCIPAL)
+  nombre          String
+  descripcion     String?
+  imagenUrl       String?
+  posicion        Int           @default(1)
+  
+  // Estado
+  estado          EstadoPremio  @default(PENDIENTE)
+  
+  // Ganador (cuando se asigne)
+  ganadorId       String?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("premios")
+}
+
+// ============================================
+// PARTICIPACIONES
+// Referencia: DOCUMENTO 32 REGLAS PRODUCTO SORTEOS
+// Registro de participacion SIN dinero
+// ============================================
+
+model Participacion {
+  id              String    @id @default(uuid())
+  
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  
+  sorteoId        String
+  sorteo          Sorteo    @relation(fields: [sorteoId], references: [id])
+  
+  // Boletos asignados
+  numeroBoleto    Int
+  
+  // Estado
+  esGanador       Boolean   @default(false)
+  
+  createdAt       DateTime  @default(now())
+
+  @@unique([sorteoId, numeroBoleto])
+  @@map("participaciones")
+}

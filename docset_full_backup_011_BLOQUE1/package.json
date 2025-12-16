@@ -1,0 +1,19 @@
+{
+  "name": "ilovetohelp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "I Love To Help - Plataforma de Sorteos con Impacto Social",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=packages/backend",
+    "build:backend": "npm run build --workspace=packages/backend",
+    "start:backend": "npm run start:prod --workspace=packages/backend",
+    "db:migrate": "npm run prisma:migrate --workspace=packages/backend",
+    "db:generate": "npm run prisma:generate --workspace=packages/backend"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

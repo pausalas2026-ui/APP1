@@ -1,0 +1,923 @@
+// DOCUMENTO 14 - MODELO DATOS
+// DOCUMENTO 03 - ACTORES Y ROLES
+// DOCUMENTO 32 - REGLAS PRODUCTO SORTEOS
+// BLOQUE 1: Entidades core SIN flujos de dinero, SIN KYC
+// BLOQUE 2: Logica de dominio del sorteo, categorias, entregas, verificaciones
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USUARIOS, ROLES Y PERMISOS
+// Referencia: DOCUMENTO 03 ACTORES ROLES
+// ============================================
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  nombre          String
+  apellidos       String?
+  telefono        String?
+  fechaNacimiento DateTime?
+  avatarUrl       String?
+  isActive        Boolean   @default(true)
+  emailVerified   Boolean   @default(false)
+  
+  // Relacion con rol
+  roleId          String
+  role            Role      @relation(fields: [roleId], references: [id])
+  
+  // Relaciones de participacion (SIN dinero)
+  participaciones Participacion[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("users")
+}
+
+model Role {
+  id          String       @id @default(uuid())
+  nombre      String       @unique
+  descripcion String?
+  isDefault   Boolean      @default(false)
+  
+  // Relaciones
+  users       User[]
+  permisos    RolePermission[]
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  codigo      String           @unique
+  nombre      String
+  descripcion String?
+  modulo      String
+  
+  // Relaciones
+  roles       RolePermission[]
+  
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  permissionId String
+  
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  createdAt    DateTime   @default(now())
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================
+// CAUSAS (ONGs)
+// Referencia: DOCUMENTO 06 MODULOS CLAVE
+// SIN liberacion de dinero
+// ============================================
+
+enum EstadoCausa {
+  PENDIENTE
+  ACTIVA
+  PAUSADA
+  COMPLETADA
+  CANCELADA
+}
+
+model Causa {
+  id              String       @id @default(uuid())
+  nombre          String
+  descripcion     String
+  imagenUrl       String?
+  sitioWeb        String?
+  
+  // Estado
+  estado          EstadoCausa  @default(PENDIENTE)
+  verificada      Boolean      @default(false)
+  
+  // Relaciones
+  sorteos         Sorteo[]
+  verificaciones  CauseVerification[]
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@map("causas")
+}
+
+// ============================================
+// SORTEOS
+// Referencia: DOCUMENTO 32 REGLAS PRODUCTO SORTEOS
+// Estructura base SIN flujos de dinero
+// ============================================
+
+enum EstadoSorteo {
+  BORRADOR
+  PROGRAMADO
+  ACTIVO
+  CERRADO
+  SORTEANDO
+  FINALIZADO
+  CANCELADO
+}
+
+enum TipoSorteo {
+  ESTANDAR
+  EXPRESS
+  BENEFICO
+}
+
+model Sorteo {
+  id                  String        @id @default(uuid())
+  codigo              String        @unique
+  titulo              String
+  descripcion         String
+  imagenUrl           String?
+  
+  // Configuracion
+  tipo                TipoSorteo    @default(ESTANDAR)
+  estado              EstadoSorteo  @default(BORRADOR)
+  
+  // Fechas
+  fechaInicio         DateTime
+  fechaFin            DateTime
+  fechaSorteo         DateTime?
+  
+  // Boletos (estructura, sin precio real)
+  totalBoletos        Int
+  boletosVendidos     Int           @default(0)
+  minimoParticipantes Int           @default(1)
+  
+  // Causa asociada
+  causaId             String?
+  causa               Causa?        @relation(fields: [causaId], references: [id])
+  porcentajeCausa     Int           @default(10)
+  
+  // Relaciones
+  premios             Premio[]
+  participaciones     Participacion[]
+  
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@map("sorteos")
+}
+
+// ============================================
+// PREMIOS
+// Referencia: DOCUMENTO 32 REGLAS PRODUCTO SORTEOS
+// Estructura y tipos SIN liberacion de dinero
+// ============================================
+
+enum TipoPremio {
+  PRINCIPAL
+  SECUNDARIO
+  CONSOLACION
+}
+
+enum EstadoPremio {
+  PENDIENTE
+  ASIGNADO
+  ENTREGADO
+  NO_RECLAMADO
+}
+
+model Premio {
+  id              String        @id @default(uuid())
+  sorteoId        String
+  sorteo          Sorteo        @relation(fields: [sorteoId], references: [id], onDelete: Cascade)
+  
+  // Informacion del premio
+  tipo            TipoPremio    @default(PRINCIPAL)
+  nombre          String
+  descripcion     String?
+  imagenUrl       String?
+  posicion        Int           @default(1)
+  
+  // Estado
+  estado          EstadoPremio  @default(PENDIENTE)
+  
+  // Ganador (cuando se asigne)
+  ganadorId       String?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("premios")
+}
+
+// ============================================
+// PARTICIPACIONES
+// Referencia: DOCUMENTO 32 REGLAS PRODUCTO SORTEOS
+// Registro de participacion SIN dinero
+// ============================================
+
+model Participacion {
+  id              String    @id @default(uuid())
+  
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  
+  sorteoId        String
+  sorteo          Sorteo    @relation(fields: [sorteoId], references: [id])
+  
+  // Boletos asignados
+  numeroBoleto    Int
+  
+  // Estado
+  esGanador       Boolean   @default(false)
+  
+  createdAt       DateTime  @default(now())
+
+  @@unique([sorteoId, numeroBoleto])
+  @@map("participaciones")
+}
+
+// ============================================
+// BLOQUE 2: CATEGORIAS DE PREMIOS
+// Referencia: DOCUMENTO 32 seccion 12 - prize_categories
+// ============================================
+
+enum TargetAudience {
+  WOMEN
+  MEN
+  TECH
+  HOME
+  EXPERIENCES
+  GENERAL
+}
+
+model PrizeCategory {
+  id             String         @id @default(uuid())
+  nombre         String         @unique
+  slug           String         @unique
+  targetAudience TargetAudience @default(GENERAL)
+  icono          String?
+  isActive       Boolean        @default(true)
+  sortOrder      Int            @default(0)
+  
+  // Relaciones
+  premios        Premio[]
+  
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@map("prize_categories")
+}
+
+// ============================================
+// BLOQUE 2: PREMIOS EXTENDIDOS
+// Referencia: DOCUMENTO 32 seccion 3.2 y 12
+// Premios de plataforma y de usuario
+// ============================================
+
+enum PrizeSource {
+  PLATFORM
+  USER
+}
+
+enum PrizeCondition {
+  NEW
+  USED
+}
+
+enum DeliveredBy {
+  USER
+  PLATFORM
+}
+
+enum EstadoPremioExtendido {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  IN_SWEEPSTAKE
+  DELIVERED
+  VERIFIED
+}
+
+model PremioExtendido {
+  id                  String                 @id @default(uuid())
+  
+  // Origen del premio
+  creatorId           String
+  source              PrizeSource            @default(PLATFORM)
+  
+  // Informacion basica
+  nombre              String
+  descripcion         String
+  valorEstimado       Decimal                @db.Decimal(10, 2)
+  condition           PrizeCondition         @default(NEW)
+  
+  // Entrega
+  deliveredBy         DeliveredBy            @default(PLATFORM)
+  deliveryConditions  String?
+  
+  // Donacion
+  isDonated           Boolean                @default(true)
+  
+  // Categoria
+  categoryId          String?
+  category            PrizeCategory?         @relation(fields: [categoryId], references: [id])
+  
+  // Estado segun DOCUMENTO 32 seccion 14
+  status              EstadoPremioExtendido  @default(DRAFT)
+  
+  // Imagenes (almacenadas como JSON array)
+  images              Json                   @default("[]")
+  
+  // Relaciones
+  entregas            PrizeDelivery[]
+  
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  @@map("premios_extendidos")
+}
+
+// ============================================
+// BLOQUE 2: ENTREGAS DE PREMIOS
+// Referencia: DOCUMENTO 32 seccion 12 - prize_deliveries
+// SIN liberacion de dinero (solo estructura)
+// ============================================
+
+enum DeliveryStatus {
+  PENDING
+  EVIDENCE_SUBMITTED
+  UNDER_REVIEW
+  VERIFIED
+  DISPUTED
+  COMPLETED
+}
+
+model PrizeDelivery {
+  id                  String              @id @default(uuid())
+  
+  // Referencias
+  sorteoId            String
+  premioId            String
+  premio              PremioExtendido     @relation(fields: [premioId], references: [id])
+  winnerId            String
+  prizeOwnerId        String
+  
+  // Estado de entrega segun DOCUMENTO 32 seccion 14
+  deliveryStatus      DeliveryStatus      @default(PENDING)
+  
+  // Evidencias (DOCUMENTO 32 seccion 4 y 5)
+  evidenceImages      Json                @default("[]")
+  winnerContactInfo   Json?
+  
+  // Verificacion (estructura sin implementar admin)
+  verificationNotes   String?
+  verifiedBy          String?
+  verifiedAt          DateTime?
+  
+  // Dinero (estructura, NO se libera en BLOQUE 2)
+  moneyReleased       Boolean             @default(false)
+  moneyReleasedAt     DateTime?
+  moneyAmount         Decimal?            @db.Decimal(10, 2)
+  
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@map("prize_deliveries")
+}
+
+// ============================================
+// BLOQUE 2: VERIFICACION DE CAUSAS
+// Referencia: DOCUMENTO 32 seccion 12 - cause_verifications
+// ============================================
+
+enum VerificationStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model CauseVerification {
+  id                  String              @id @default(uuid())
+  
+  causaId             String
+  causa               Causa               @relation(fields: [causaId], references: [id])
+  submittedBy         String
+  
+  // Estado segun DOCUMENTO 32 seccion 14
+  verificationStatus  VerificationStatus  @default(PENDING)
+  
+  // Documentos y enlaces
+  documents           Json                @default("[]")
+  externalLinks       Json                @default("[]")
+  
+  // Fundacion (si aplica)
+  foundationName      String?
+  foundationId        String?
+  
+  // Revision (estructura sin implementar admin)
+  reviewerId          String?
+  reviewerNotes       String?
+  reviewedAt          DateTime?
+  rejectionReason     String?
+  
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@map("cause_verifications")
+}
+
+// ============================================
+// BLOQUE 2: ASIGNACION DE CAUSA POR DEFECTO
+// Referencia: DOCUMENTO 32 seccion 12 - default_cause_assignments
+// ============================================
+
+enum AssignmentReason {
+  USER_DID_NOT_SELECT
+  CAUSE_REJECTED
+  CAUSE_INACTIVE
+}
+
+model DefaultCauseAssignment {
+  id                  String            @id @default(uuid())
+  
+  sorteoId            String
+  originalCauseId     String?
+  assignedCauseId     String
+  assignmentReason    AssignmentReason
+  
+  assignedAt          DateTime          @default(now())
+
+  @@map("default_cause_assignments")
+}
+
+// ============================================
+// BLOQUE 3: LOGS DE AUDITORIA
+// Referencia: DOCUMENTO 37 - LOGS, AUDITORIA Y TRAZABILIDAD
+// Seccion 5 - Estructura minima de un log
+// ============================================
+
+enum AuditCategory {
+  FINANCIAL
+  LEGAL
+  OPERATIONAL
+  SECURITY
+}
+
+enum ActorType {
+  USER
+  ADMIN
+  SYSTEM
+}
+
+model AuditLog {
+  id            String         @id @default(uuid())
+  
+  // Tipo de evento (DOC 37 seccion 7)
+  eventType     String
+  
+  // Entidad afectada
+  entityType    String
+  entityId      String?
+  
+  // Actor (quien ejecuto)
+  actorId       String?        // UUID o 'SYSTEM'
+  actorType     ActorType      @default(SYSTEM)
+  
+  // Timestamp (inmutable - DOC 37 seccion 6)
+  createdAt     DateTime       @default(now())
+  
+  // Datos adicionales
+  metadata      Json           @default("{}")
+  
+  // Contexto tecnico
+  ipAddress     String?
+  userAgent     String?
+  requestId     String?        // Para correlacion
+  
+  // Categoria para filtrado rapido (DOC 37 seccion 7)
+  category      AuditCategory  @default(OPERATIONAL)
+
+  // IMPORTANTE: Sin columnas de updatedAt ni deletedAt
+  // Los logs son INMUTABLES (DOC 37 seccion 6)
+
+  @@index([eventType])
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt(sort: Desc)])
+  @@index([category])
+  @@map("audit_logs")
+}
+
+// ============================================
+// BLOQUE 3: INCIDENTES, FRAUDE Y DISPUTAS
+// Referencia: DOCUMENTO 38 - GESTION DE INCIDENTES
+// ============================================
+
+// DOC 38 seccion 4 - Tipos de entidad para flags
+enum FlagEntityType {
+  USER
+  RAFFLE
+  PRIZE
+  CAUSE
+  MONEY
+}
+
+// DOC 38 seccion 6 - Estados de incidente
+enum IncidentStatus {
+  REPORTED
+  TRIAGED
+  UNDER_REVIEW
+  ACTION_TAKEN
+  RESOLVED
+  REJECTED
+}
+
+// DOC 38 seccion 6 - Prioridad de incidente
+enum IncidentPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// DOC 38 seccion 3 - Tipos de incidente
+enum IncidentType {
+  PRIZE
+  MONEY
+  CAUSE
+  USER
+  PARTICIPATION
+  MESSAGE
+}
+
+// DOC 38 seccion 6 - Tipos de resolucion
+enum ResolutionType {
+  CONFIRMED_FRAUD
+  FALSE_POSITIVE
+  PARTIAL_RESOLUTION
+  ESCALATED
+  NO_ACTION_REQUIRED
+}
+
+// DOC 38 seccion 4 - Tabla entity_flags
+model EntityFlag {
+  id              String          @id @default(uuid())
+  
+  // Entidad afectada
+  entityType      FlagEntityType
+  entityId        String
+  
+  // Flag (DOC 38 seccion 4 - catalogo de flags)
+  flagCode        String
+  
+  // Contexto
+  reason          String?
+  evidenceIds     String[]        @default([])
+  
+  // Estado del flag
+  isActive        Boolean         @default(true)
+  
+  // Quien lo puso
+  createdBy       String          // USER_ID o 'SYSTEM'
+  createdAt       DateTime        @default(now())
+  
+  // Resolucion (si aplica)
+  resolvedBy      String?
+  resolvedAt      DateTime?
+  resolutionNotes String?
+  
+  // Incidente relacionado (opcional)
+  incidentId      String?
+  incident        Incident?       @relation(fields: [incidentId], references: [id])
+
+  @@unique([entityType, entityId, flagCode, isActive])
+  @@index([entityType, entityId])
+  @@index([flagCode])
+  @@index([isActive])
+  @@map("entity_flags")
+}
+
+// DOC 38 seccion 6 - Tabla incidents
+model Incident {
+  id              String            @id @default(uuid())
+  
+  // Identificacion
+  incidentCode    String
+  incidentType    IncidentType
+  
+  // Entidad afectada
+  entityType      FlagEntityType
+  entityId        String
+  
+  // Reportante
+  reportedBy      String?
+  reportedAt      DateTime          @default(now())
+  
+  // Descripcion
+  title           String
+  description     String
+  
+  // Estado
+  status          IncidentStatus    @default(REPORTED)
+  priority        IncidentPriority  @default(MEDIUM)
+  
+  // Asignacion
+  assignedTo      String?
+  assignedAt      DateTime?
+  
+  // Resolucion
+  resolutionType  ResolutionType?
+  resolutionNotes String?
+  resolvedBy      String?
+  resolvedAt      DateTime?
+  
+  // Acciones tomadas (JSON array)
+  actionsTaken    Json              @default("[]")
+  
+  // Evidencias
+  evidenceIds     String[]          @default([])
+  
+  // Relaciones
+  flags           EntityFlag[]
+  actions         IncidentAction[]
+  
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([status])
+  @@index([incidentType])
+  @@index([entityType, entityId])
+  @@index([priority])
+  @@index([assignedTo])
+  @@map("incidents")
+}
+
+// DOC 38 seccion 10 - Tabla incident_actions
+model IncidentAction {
+  id              String    @id @default(uuid())
+  
+  // Incidente relacionado
+  incidentId      String
+  incident        Incident  @relation(fields: [incidentId], references: [id])
+  
+  // Accion (DOC 38 seccion 10 - catalogo de acciones)
+  actionCode      String
+  
+  // Contexto
+  targetType      FlagEntityType?
+  targetId        String?
+  
+  // Detalles
+  notes           String?
+  metadata        Json      @default("{}")
+  
+  // Quien ejecuto
+  executedBy      String
+  executedAt      DateTime  @default(now())
+  
+  // Resultado
+  wasSuccessful   Boolean   @default(true)
+  errorMessage    String?
+
+  @@index([incidentId])
+  @@index([actionCode])
+  @@map("incident_actions")
+}
+
+// ============================================
+// DOCUMENTO 39 - PANEL DE ADMINISTRACIÓN Y GOBERNANZA
+// Roles administrativos, permisos y usuarios admin
+// ============================================
+
+// DOC 39 seccion 3 - Roles administrativos
+model AdminRole {
+  id          String    @id @default(uuid())
+  
+  // Identificación
+  roleCode    String    @unique
+  roleName    String
+  description String?
+  
+  // Permisos (JSON array de códigos de permiso)
+  permissions Json      @default("[]")
+  
+  // Estado
+  isActive    Boolean   @default(true)
+  
+  // Relaciones
+  adminUsers  AdminUser[]
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("admin_roles")
+}
+
+// DOC 39 seccion 3 - Usuarios administrativos
+model AdminUser {
+  id          String    @id @default(uuid())
+  
+  // Usuario base (referencia a User)
+  userId      String    @unique
+  
+  // Rol asignado
+  roleId      String
+  role        AdminRole @relation(fields: [roleId], references: [id])
+  
+  // Estado
+  isActive    Boolean   @default(true)
+  
+  // 2FA (DOC 39 seccion 15)
+  twoFactorEnabled  Boolean   @default(false)
+  twoFactorSecret   String?
+  
+  // Auditoría
+  assignedBy  String?
+  assignedAt  DateTime  @default(now())
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("admin_users")
+}
+
+// DOC 39 seccion 13 - Documentos legales versionados
+model LegalDocument {
+  id              String    @id @default(uuid())
+  
+  // Tipo de documento
+  type            LegalDocType
+  
+  // Versionado
+  version         String
+  title           String
+  content         String
+  summary         String?
+  
+  // Estado
+  isCurrent       Boolean   @default(false)
+  
+  // Vigencia
+  effectiveFrom   DateTime
+  effectiveUntil  DateTime?
+  
+  // Auditoría
+  createdBy       String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([type, version])
+  @@index([type])
+  @@index([isCurrent])
+  @@map("legal_documents")
+}
+
+enum LegalDocType {
+  TOS
+  PRIVACY
+  RAFFLE_BASES
+  DONATION_TERMS
+  COOKIE_POLICY
+}
+
+// DOC 39 seccion 15 - Log de accesos admin
+model AdminAccessLog {
+  id          String    @id @default(uuid())
+  
+  // Admin que accedió
+  adminUserId String
+  
+  // Detalle del acceso
+  method      String
+  path        String
+  ipAddress   String?
+  userAgent   String?
+  
+  // Resultado
+  statusCode  Int?
+  
+  createdAt   DateTime  @default(now())
+
+  @@index([adminUserId])
+  @@index([createdAt])
+  @@map("admin_access_logs")
+}
+
+// ============================================
+// DOCUMENTO 40 - CONFIGURACIÓN GLOBAL Y PARÁMETROS
+// Sistema centralizado de configuración del sistema
+// ============================================
+
+// DOC 40 seccion 13 - Configuración centralizada
+model SystemConfig {
+  id              String    @id @default(uuid())
+  
+  // Identificación
+  configKey       String
+  configGroup     ConfigGroup
+  
+  // Valor tipado (solo uno se usa según valueType)
+  valueType       ConfigValueType
+  valueString     String?
+  valueInteger    Int?
+  valueDecimal    Decimal?  @db.Decimal(15, 4)
+  valueBoolean    Boolean?
+  valueJson       Json?
+  
+  // Contexto opcional (para multi-país)
+  countryCode     String?   @db.Char(2)
+  
+  // Metadata
+  description     String?
+  isSensitive     Boolean   @default(false)
+  
+  // Estado
+  isActive        Boolean   @default(true)
+  
+  // Versionado
+  version         Int       @default(1)
+  
+  // Auditoría
+  createdBy       String?
+  createdAt       DateTime  @default(now())
+  updatedBy       String?
+  updatedAt       DateTime  @updatedAt
+  
+  // Historial
+  history         SystemConfigHistory[]
+
+  @@unique([configKey, countryCode])
+  @@index([configKey])
+  @@index([configGroup])
+  @@index([countryCode])
+  @@map("system_config")
+}
+
+// DOC 40 seccion 13 - Historial de cambios de configuración
+model SystemConfigHistory {
+  id            String    @id @default(uuid())
+  
+  // Config original
+  configId      String
+  config        SystemConfig @relation(fields: [configId], references: [id])
+  configKey     String
+  
+  // Valores
+  oldValue      Json
+  newValue      Json
+  
+  // Quién y cuándo
+  changedBy     String
+  changedAt     DateTime  @default(now())
+  
+  // Motivo
+  changeReason  String?
+
+  @@index([configId])
+  @@index([configKey])
+  @@index([changedAt])
+  @@map("system_config_history")
+}
+
+// DOC 40 seccion 3 - Grupos de configuración
+enum ConfigGroup {
+  MONEY       // Umbrales económicos
+  FEES        // Porcentajes y fees
+  RAFFLE      // Parámetros de sorteos
+  PRIZE       // Parámetros de premios
+  CAUSE       // Parámetros de causas
+  KYC         // Verificación de identidad
+  MESSAGING   // Mensajería y engagement
+  FRAUD       // Antifraude y seguridad
+  GEO         // Geolocalización
+  LEGAL       // Legal y compliance
+  SYSTEM      // Configuración general del sistema
+}
+
+// DOC 40 seccion 13 - Tipos de valor
+enum ConfigValueType {
+  STRING
+  INTEGER
+  DECIMAL
+  BOOLEAN
+  JSON
+  ARRAY
+}

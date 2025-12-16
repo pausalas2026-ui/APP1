@@ -1,0 +1,469 @@
+// DOCUMENTO 14 - MODELO DATOS
+// DOCUMENTO 03 - ACTORES Y ROLES
+// DOCUMENTO 32 - REGLAS PRODUCTO SORTEOS
+// BLOQUE 1: Entidades core SIN flujos de dinero, SIN KYC
+// BLOQUE 2: Logica de dominio del sorteo, categorias, entregas, verificaciones
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USUARIOS, ROLES Y PERMISOS
+// Referencia: DOCUMENTO 03 ACTORES ROLES
+// ============================================
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  nombre          String
+  apellidos       String?
+  telefono        String?
+  fechaNacimiento DateTime?
+  avatarUrl       String?
+  isActive        Boolean   @default(true)
+  emailVerified   Boolean   @default(false)
+  
+  // Relacion con rol
+  roleId          String
+  role            Role      @relation(fields: [roleId], references: [id])
+  
+  // Relaciones de participacion (SIN dinero)
+  participaciones Participacion[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("users")
+}
+
+model Role {
+  id          String       @id @default(uuid())
+  nombre      String       @unique
+  descripcion String?
+  isDefault   Boolean      @default(false)
+  
+  // Relaciones
+  users       User[]
+  permisos    RolePermission[]
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  codigo      String           @unique
+  nombre      String
+  descripcion String?
+  modulo      String
+  
+  // Relaciones
+  roles       RolePermission[]
+  
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  permissionId String
+  
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  createdAt    DateTime   @default(now())
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================
+// CAUSAS (ONGs)
+// Referencia: DOCUMENTO 06 MODULOS CLAVE
+// SIN liberacion de dinero
+// ============================================
+
+enum EstadoCausa {
+  PENDIENTE
+  ACTIVA
+  PAUSADA
+  COMPLETADA
+  CANCELADA
+}
+
+model Causa {
+  id              String       @id @default(uuid())
+  nombre          String
+  descripcion     String
+  imagenUrl       String?
+  sitioWeb        String?
+  
+  // Estado
+  estado          EstadoCausa  @default(PENDIENTE)
+  verificada      Boolean      @default(false)
+  
+  // Relaciones
+  sorteos         Sorteo[]
+  verificaciones  CauseVerification[]
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@map("causas")
+}
+
+// ============================================
+// SORTEOS
+// Referencia: DOCUMENTO 32 REGLAS PRODUCTO SORTEOS
+// Estructura base SIN flujos de dinero
+// ============================================
+
+enum EstadoSorteo {
+  BORRADOR
+  PROGRAMADO
+  ACTIVO
+  CERRADO
+  SORTEANDO
+  FINALIZADO
+  CANCELADO
+}
+
+enum TipoSorteo {
+  ESTANDAR
+  EXPRESS
+  BENEFICO
+}
+
+model Sorteo {
+  id                  String        @id @default(uuid())
+  codigo              String        @unique
+  titulo              String
+  descripcion         String
+  imagenUrl           String?
+  
+  // Configuracion
+  tipo                TipoSorteo    @default(ESTANDAR)
+  estado              EstadoSorteo  @default(BORRADOR)
+  
+  // Fechas
+  fechaInicio         DateTime
+  fechaFin            DateTime
+  fechaSorteo         DateTime?
+  
+  // Boletos (estructura, sin precio real)
+  totalBoletos        Int
+  boletosVendidos     Int           @default(0)
+  minimoParticipantes Int           @default(1)
+  
+  // Causa asociada
+  causaId             String?
+  causa               Causa?        @relation(fields: [causaId], references: [id])
+  porcentajeCausa     Int           @default(10)
+  
+  // Relaciones
+  premios             Premio[]
+  participaciones     Participacion[]
+  
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@map("sorteos")
+}
+
+// ============================================
+// PREMIOS
+// Referencia: DOCUMENTO 32 REGLAS PRODUCTO SORTEOS
+// Estructura y tipos SIN liberacion de dinero
+// ============================================
+
+enum TipoPremio {
+  PRINCIPAL
+  SECUNDARIO
+  CONSOLACION
+}
+
+enum EstadoPremio {
+  PENDIENTE
+  ASIGNADO
+  ENTREGADO
+  NO_RECLAMADO
+}
+
+model Premio {
+  id              String        @id @default(uuid())
+  sorteoId        String
+  sorteo          Sorteo        @relation(fields: [sorteoId], references: [id], onDelete: Cascade)
+  
+  // Informacion del premio
+  tipo            TipoPremio    @default(PRINCIPAL)
+  nombre          String
+  descripcion     String?
+  imagenUrl       String?
+  posicion        Int           @default(1)
+  
+  // Estado
+  estado          EstadoPremio  @default(PENDIENTE)
+  
+  // Ganador (cuando se asigne)
+  ganadorId       String?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("premios")
+}
+
+// ============================================
+// PARTICIPACIONES
+// Referencia: DOCUMENTO 32 REGLAS PRODUCTO SORTEOS
+// Registro de participacion SIN dinero
+// ============================================
+
+model Participacion {
+  id              String    @id @default(uuid())
+  
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  
+  sorteoId        String
+  sorteo          Sorteo    @relation(fields: [sorteoId], references: [id])
+  
+  // Boletos asignados
+  numeroBoleto    Int
+  
+  // Estado
+  esGanador       Boolean   @default(false)
+  
+  createdAt       DateTime  @default(now())
+
+  @@unique([sorteoId, numeroBoleto])
+  @@map("participaciones")
+}
+
+// ============================================
+// BLOQUE 2: CATEGORIAS DE PREMIOS
+// Referencia: DOCUMENTO 32 seccion 12 - prize_categories
+// ============================================
+
+enum TargetAudience {
+  WOMEN
+  MEN
+  TECH
+  HOME
+  EXPERIENCES
+  GENERAL
+}
+
+model PrizeCategory {
+  id             String         @id @default(uuid())
+  nombre         String         @unique
+  slug           String         @unique
+  targetAudience TargetAudience @default(GENERAL)
+  icono          String?
+  isActive       Boolean        @default(true)
+  sortOrder      Int            @default(0)
+  
+  // Relaciones
+  premios        Premio[]
+  
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@map("prize_categories")
+}
+
+// ============================================
+// BLOQUE 2: PREMIOS EXTENDIDOS
+// Referencia: DOCUMENTO 32 seccion 3.2 y 12
+// Premios de plataforma y de usuario
+// ============================================
+
+enum PrizeSource {
+  PLATFORM
+  USER
+}
+
+enum PrizeCondition {
+  NEW
+  USED
+}
+
+enum DeliveredBy {
+  USER
+  PLATFORM
+}
+
+enum EstadoPremioExtendido {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  IN_SWEEPSTAKE
+  DELIVERED
+  VERIFIED
+}
+
+model PremioExtendido {
+  id                  String                 @id @default(uuid())
+  
+  // Origen del premio
+  creatorId           String
+  source              PrizeSource            @default(PLATFORM)
+  
+  // Informacion basica
+  nombre              String
+  descripcion         String
+  valorEstimado       Decimal                @db.Decimal(10, 2)
+  condition           PrizeCondition         @default(NEW)
+  
+  // Entrega
+  deliveredBy         DeliveredBy            @default(PLATFORM)
+  deliveryConditions  String?
+  
+  // Donacion
+  isDonated           Boolean                @default(true)
+  
+  // Categoria
+  categoryId          String?
+  category            PrizeCategory?         @relation(fields: [categoryId], references: [id])
+  
+  // Estado segun DOCUMENTO 32 seccion 14
+  status              EstadoPremioExtendido  @default(DRAFT)
+  
+  // Imagenes (almacenadas como JSON array)
+  images              Json                   @default("[]")
+  
+  // Relaciones
+  entregas            PrizeDelivery[]
+  
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  @@map("premios_extendidos")
+}
+
+// ============================================
+// BLOQUE 2: ENTREGAS DE PREMIOS
+// Referencia: DOCUMENTO 32 seccion 12 - prize_deliveries
+// SIN liberacion de dinero (solo estructura)
+// ============================================
+
+enum DeliveryStatus {
+  PENDING
+  EVIDENCE_SUBMITTED
+  UNDER_REVIEW
+  VERIFIED
+  DISPUTED
+  COMPLETED
+}
+
+model PrizeDelivery {
+  id                  String              @id @default(uuid())
+  
+  // Referencias
+  sorteoId            String
+  premioId            String
+  premio              PremioExtendido     @relation(fields: [premioId], references: [id])
+  winnerId            String
+  prizeOwnerId        String
+  
+  // Estado de entrega segun DOCUMENTO 32 seccion 14
+  deliveryStatus      DeliveryStatus      @default(PENDING)
+  
+  // Evidencias (DOCUMENTO 32 seccion 4 y 5)
+  evidenceImages      Json                @default("[]")
+  winnerContactInfo   Json?
+  
+  // Verificacion (estructura sin implementar admin)
+  verificationNotes   String?
+  verifiedBy          String?
+  verifiedAt          DateTime?
+  
+  // Dinero (estructura, NO se libera en BLOQUE 2)
+  moneyReleased       Boolean             @default(false)
+  moneyReleasedAt     DateTime?
+  moneyAmount         Decimal?            @db.Decimal(10, 2)
+  
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@map("prize_deliveries")
+}
+
+// ============================================
+// BLOQUE 2: VERIFICACION DE CAUSAS
+// Referencia: DOCUMENTO 32 seccion 12 - cause_verifications
+// ============================================
+
+enum VerificationStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model CauseVerification {
+  id                  String              @id @default(uuid())
+  
+  causaId             String
+  causa               Causa               @relation(fields: [causaId], references: [id])
+  submittedBy         String
+  
+  // Estado segun DOCUMENTO 32 seccion 14
+  verificationStatus  VerificationStatus  @default(PENDING)
+  
+  // Documentos y enlaces
+  documents           Json                @default("[]")
+  externalLinks       Json                @default("[]")
+  
+  // Fundacion (si aplica)
+  foundationName      String?
+  foundationId        String?
+  
+  // Revision (estructura sin implementar admin)
+  reviewerId          String?
+  reviewerNotes       String?
+  reviewedAt          DateTime?
+  rejectionReason     String?
+  
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@map("cause_verifications")
+}
+
+// ============================================
+// BLOQUE 2: ASIGNACION DE CAUSA POR DEFECTO
+// Referencia: DOCUMENTO 32 seccion 12 - default_cause_assignments
+// ============================================
+
+enum AssignmentReason {
+  USER_DID_NOT_SELECT
+  CAUSE_REJECTED
+  CAUSE_INACTIVE
+}
+
+model DefaultCauseAssignment {
+  id                  String            @id @default(uuid())
+  
+  sorteoId            String
+  originalCauseId     String?
+  assignedCauseId     String
+  assignmentReason    AssignmentReason
+  
+  assignedAt          DateTime          @default(now())
+
+  @@map("default_cause_assignments")
+}
