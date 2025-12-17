@@ -1,6 +1,26 @@
 // DOCUMENTO 37 - LOGS, AUDITORIA Y TRAZABILIDAD
 // Seccion 5 - Estructura minima de un log
+// Seccion 6 - Regla de INMUTABILIDAD (GAP CRÍTICO #1 RESUELTO)
 // Seccion 7 - Catalogo de tipos de eventos
+
+/**
+ * ============================================================================
+ * INMUTABILIDAD GARANTIZADA A NIVEL BASE DE DATOS
+ * ============================================================================
+ * 
+ * GAP CRÍTICO #1 - BLOQUE 3 (Resuelto: 17-12-2025)
+ * 
+ * Los registros de audit_logs están protegidos por:
+ * 1. Trigger PostgreSQL: audit_logs_immutability_trigger
+ * 2. Función: prevent_audit_log_modification()
+ * 
+ * Cualquier intento de UPDATE o DELETE lanzará excepción:
+ * "VIOLACIÓN DE INMUTABILIDAD: Los registros de audit_logs NO pueden ser..."
+ * 
+ * Migración: prisma/migrations/audit_logs_immutability.sql
+ * Referencia: DOCUMENTO 37 Sección 6
+ * ============================================================================
+ */
 
 /**
  * Categorias de logs segun DOC 37 seccion 7

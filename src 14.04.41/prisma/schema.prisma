@@ -487,6 +487,25 @@ enum ActorType {
   SYSTEM
 }
 
+// ============================================
+// BLOQUE 3: LOGS Y AUDITORIA
+// Referencia: DOCUMENTO 37 - LOGS, AUDITORIA Y TRAZABILIDAD
+// ============================================
+
+// ┌─────────────────────────────────────────────────────────────────────────────┐
+// │ GAP CRÍTICO #1 RESUELTO - INMUTABILIDAD A NIVEL BASE DE DATOS              │
+// │                                                                             │
+// │ Esta tabla está protegida por trigger PostgreSQL que BLOQUEA:              │
+// │   - UPDATE: Lanza excepción "VIOLACIÓN DE INMUTABILIDAD..."                │
+// │   - DELETE: Lanza excepción "VIOLACIÓN DE INMUTABILIDAD..."                │
+// │                                                                             │
+// │ Migración: prisma/migrations/audit_logs_immutability.sql                   │
+// │ Trigger: audit_logs_immutability_trigger                                   │
+// │ Función: prevent_audit_log_modification()                                  │
+// │ Referencia: DOC 37 Sección 6                                               │
+// │ Fecha resolución: 17-12-2025                                               │
+// └─────────────────────────────────────────────────────────────────────────────┘
+
 model AuditLog {
   id            String         @id @default(uuid())
   
@@ -515,8 +534,12 @@ model AuditLog {
   // Categoria para filtrado rapido (DOC 37 seccion 7)
   category      AuditCategory  @default(OPERATIONAL)
 
-  // IMPORTANTE: Sin columnas de updatedAt ni deletedAt
-  // Los logs son INMUTABLES (DOC 37 seccion 6)
+  // ═══════════════════════════════════════════════════════════════════════════
+  // INMUTABILIDAD GARANTIZADA:
+  // - Sin columnas updatedAt ni deletedAt (capa aplicación)
+  // - Trigger PostgreSQL bloquea UPDATE/DELETE (capa base de datos)
+  // - Referencia: DOC 37 seccion 6
+  // ═══════════════════════════════════════════════════════════════════════════
 
   @@index([eventType])
   @@index([entityType, entityId])
